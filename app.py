@@ -40,6 +40,10 @@ LABELS = {
     3: "Potassium Deficiency"
 }
 
+@app.route("/")
+def home():
+    return "Fertilizer Suggestion API is live!"
+
 @app.route("/predict", methods=["POST"])
 def predict():
     if "crop" not in request.form:
@@ -65,7 +69,7 @@ def predict():
         preds = model.predict(img)[0]
         idx = int(np.argmax(preds))
         label = LABELS.get(idx, "Unknown")
-        confidence = float(round(np.max(preds),2))
+        confidence = float(round(np.max(preds), 2))
         solution = ADVICE.get(label, {}).get(crop, "No advice available for this crop.")
 
         return jsonify({
@@ -77,6 +81,6 @@ def predict():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    from waitress import serve
-    serve(app, host='0.0.0.0', port=5000)
-
+    # Render requires the app to bind to the dynamic PORT environment variable
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)

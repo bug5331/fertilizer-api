@@ -1,0 +1,6 @@
+Flask
+gunicorn
+tensorflow
+pillow
+numpy
+waitress

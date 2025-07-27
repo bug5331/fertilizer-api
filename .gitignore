@@ -1,0 +1,10 @@
+__pycache__/
+*.h5
+*.pyc
+uploads/
+saved_model/
+crop_disease_dataset/
+dataset_split/
+*.zip
+*.tar.gz
+*.rar

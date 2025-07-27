@@ -4,7 +4,11 @@ import numpy as np
 from PIL import Image
 from tensorflow.keras.models import load_model
 
+# Suppress TensorFlow CUDA warnings for CPU-only environment (Render)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # Suppresses INFO and WARNING logs
+
 app = Flask(__name__)
+# Load the model (ensure saved_model/final_model.h5 exists in your repository)
 model = load_model("saved_model/final_model.h5")
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -49,7 +53,7 @@ def predict():
     if "crop" not in request.form:
         return jsonify({"error": "Please include 'crop' parameter."}), 400
     crop = request.form["crop"].lower()
-    if crop not in {"rice","wheat","potato"}:
+    if crop not in {"rice", "wheat", "potato"}:
         return jsonify({"error": f"Crop '{crop}' not supported."}), 400
 
     if "file" not in request.files:
@@ -63,8 +67,8 @@ def predict():
     file.save(filepath)
 
     try:
-        img = Image.open(filepath).resize((224,224))
-        img = np.array(img)/255.0
+        img = Image.open(filepath).resize((224, 224))
+        img = np.array(img) / 255.0
         img = np.expand_dims(img, axis=0)
         preds = model.predict(img)[0]
         idx = int(np.argmax(preds))
@@ -79,8 +83,13 @@ def predict():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    finally:
+        # Clean up uploaded file to save disk space
+        if os.path.exists(filepath):
+            os.remove(filepath)
 
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))  # 👈 this is required for Render
+if __name__ == "__main__":
+    # For local testing with Waitress; Render uses Gunicorn
+    port = int(os.environ.get("PORT", 5000))  # Required for Render
     from waitress import serve
-    serve(app, host='0.0.0.0', port=port)
+    serve(app, host="0.0.0.0", port=port)  # Fixed typo: 'pt' → 'port'

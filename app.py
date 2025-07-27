@@ -4,6 +4,26 @@ import numpy as np
 from PIL import Image
 from tensorflow.keras.models import load_model
 
+import requests
+
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1HqQVeFIYst7xGidIDEfHcXyLb8W6B_Yg"
+MODEL_PATH = "saved_model/final_model.h5"
+
+# Create folder if not exists
+os.makedirs("saved_model", exist_ok=True)
+
+# Download model if not already downloaded
+if not os.path.exists(MODEL_PATH):
+    print("Downloading model from Google Drive...")
+    r = requests.get(MODEL_URL)
+    with open(MODEL_PATH, "wb") as f:
+        f.write(r.content)
+    print("Model downloaded.")
+
+# Load the model
+model = load_model(MODEL_PATH)
+
+
 # Suppress TensorFlow CUDA warnings for CPU-only environment (Render)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # Suppresses INFO and WARNING logs
 

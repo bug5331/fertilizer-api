@@ -1,6 +1,6 @@
-Flask
-gunicorn
-tensorflow==2.10.0
-pillow
-numpy
+Flask==3.1.1
+gunicorn==23.0.0
+tensorflow-cpu==2.10.0
+Pillow==10.4.0
+numpy==1.22.4
 waitress

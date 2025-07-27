@@ -81,6 +81,6 @@ def predict():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    # Render requires the app to bind to the dynamic PORT environment variable
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 5000))  # 👈 this is required for Render
+    from waitress import serve
+    serve(app, host='0.0.0.0', port=port)

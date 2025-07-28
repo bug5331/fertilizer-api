@@ -1,8 +1,8 @@
 __pycache__/
-*.h5
+#*.h5
 *.pyc
 uploads/
-saved_model/
+#saved_model/
 crop_disease_dataset/
 dataset_split/
 *.zip

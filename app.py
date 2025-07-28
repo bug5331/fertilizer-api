@@ -3,33 +3,28 @@ import os
 import numpy as np
 from PIL import Image
 from tensorflow.keras.models import load_model
+import gdown  # <-- use gdown instead of requests
 
-import requests
-
-MODEL_URL = "https://drive.google.com/uc?export=download&id=1HqQVeFIYst7xGidIDEfHcXyLb8W6B_Yg"
+# Google Drive direct download using gdown
+MODEL_URL = "https://drive.google.com/uc?id=1HqQVeFIYst7xGidIDEfHcXyLb8W6B_Yg"
 MODEL_PATH = "saved_model/final_model.h5"
 
-# Create folder if not exists
+# Create model folder if it doesn't exist
 os.makedirs("saved_model", exist_ok=True)
 
-# Download model if not already downloaded
+# Download model if not already present
 if not os.path.exists(MODEL_PATH):
-    print("Downloading model from Google Drive...")
-    r = requests.get(MODEL_URL)
-    with open(MODEL_PATH, "wb") as f:
-        f.write(r.content)
-    print("Model downloaded.")
+    print("Downloading model using gdown...")
+    gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
+    print("Model downloaded successfully.")
 
 # Load the model
 model = load_model(MODEL_PATH)
 
-
-# Suppress TensorFlow CUDA warnings for CPU-only environment (Render)
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # Suppresses INFO and WARNING logs
+# Suppress TensorFlow logs for cleaner output
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 app = Flask(__name__)
-# Load the model (ensure saved_model/final_model.h5 exists in your repository)
-model = load_model("saved_model/final_model.h5")
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -57,6 +52,7 @@ ADVICE = {
     }
 }
 
+# Model output label mapping
 LABELS = {
     0: "Healthy",
     1: "Nitrogen Deficiency",
@@ -104,12 +100,10 @@ def predict():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        # Clean up uploaded file to save disk space
         if os.path.exists(filepath):
             os.remove(filepath)
 
 if __name__ == "__main__":
-    # For local testing with Waitress; Render uses Gunicorn
-    port = int(os.environ.get("PORT", 5000))  # Required for Render
+    port = int(os.environ.get("PORT", 5000))  # required for Render
     from waitress import serve
-    serve(app, host="0.0.0.0", port=port)  # Fixed typo: 'pt' → 'port'
+    serve(app, host="0.0.0.0", port=port)

@@ -2,31 +2,22 @@ from flask import Flask, request, jsonify
 import os
 import numpy as np
 from PIL import Image
-from tensorflow.keras.models import load_model
-import gdown
+import tensorflow as tf
 
 # Constants
-MODEL_ID = "1HqQVeFIYst7xGidIDEfHcXyLb8W6B_Yg"
-MODEL_URL = f"https://drive.google.com/uc?id={MODEL_ID}"
-MODEL_PATH = "saved_model/final_model.h5"
+MODEL_PATH = "saved_model/model.tflite"
 UPLOAD_FOLDER = "uploads"
-
-# Create necessary directories
-os.makedirs("saved_model", exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# Download the model from Google Drive if not already present
-if not os.path.exists(MODEL_PATH):
-    print("Downloading model using gdown...")
-    gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
-    print("Model downloaded successfully.")
 
 # Suppress TensorFlow logs
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
-# Load the model
-print("Loading model...")
-model = load_model(MODEL_PATH)
+# Load the TFLite model
+print("Loading TFLite model...")
+interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
+interpreter.allocate_tensors()
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
 print("Model loaded.")
 
 # Flask app setup
@@ -66,16 +57,14 @@ ADVICE = {
 # Routes
 @app.route("/")
 def home():
-    return "✅ Fertilizer Suggestion API is live!"
+    return "✅ Fertilizer Suggestion API (TFLite version) is live!"
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    # Check crop input
     crop = request.form.get("crop", "").lower()
     if crop not in {"rice", "wheat", "potato"}:
         return jsonify({"error": "Invalid or missing 'crop'. Choose from rice, wheat, potato."}), 400
 
-    # Check file input
     if "file" not in request.files or request.files["file"].filename == "":
         return jsonify({"error": "Image file is missing."}), 400
 
@@ -84,18 +73,19 @@ def predict():
     file.save(filepath)
 
     try:
-        # Preprocess image
         img = Image.open(filepath).resize((224, 224)).convert("RGB")
-        img_array = np.expand_dims(np.array(img) / 255.0, axis=0)
+        img_array = np.expand_dims(np.array(img, dtype=np.float32) / 255.0, axis=0)
 
-        # Predict
-        preds = model.predict(img_array)[0]
+        # TFLite prediction
+        interpreter.set_tensor(input_details[0]['index'], img_array)
+        interpreter.invoke()
+        preds = interpreter.get_tensor(output_details[0]['index'])[0]
+
         idx = int(np.argmax(preds))
         label = LABELS.get(idx, "Unknown")
         confidence = round(float(np.max(preds)), 2)
         advice = ADVICE.get(label, {}).get(crop, "No advice available for this crop.")
 
-        # Response
         return jsonify({
             "label": label,
             "confidence": confidence,
@@ -109,7 +99,7 @@ def predict():
         if os.path.exists(filepath):
             os.remove(filepath)
 
-# Start the app using waitress for production
+# Production server
 if __name__ == "__main__":
     from waitress import serve
     port = int(os.environ.get("PORT", 5000))

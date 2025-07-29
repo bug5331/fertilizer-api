@@ -3,22 +3,32 @@ import os
 import numpy as np
 from PIL import Image
 import tensorflow as tf
+import gdown
 
 # Constants
+MODEL_ID = "1juIS2yzo8eeg3d62tSlA0AYdzlkC7IFX"  # Your Drive file ID
+MODEL_URL = f"https://drive.google.com/uc?id={MODEL_ID}"
 MODEL_PATH = "saved_model/model.tflite"
 UPLOAD_FOLDER = "uploads"
+os.makedirs("saved_model", exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Suppress TensorFlow logs
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
+# Download TFLite model from Google Drive if not exists
+if not os.path.exists(MODEL_PATH):
+    print("📥 Downloading model from Google Drive...")
+    gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
+    print("✅ Download complete.")
+
 # Load the TFLite model
-print("Loading TFLite model...")
+print("🔁 Loading TFLite model...")
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
-print("Model loaded.")
+print("✅ Model loaded.")
 
 # Flask app setup
 app = Flask(__name__)
@@ -54,7 +64,6 @@ ADVICE = {
     }
 }
 
-# Routes
 @app.route("/")
 def home():
     return "✅ Fertilizer Suggestion API (TFLite version) is live!"
@@ -76,7 +85,6 @@ def predict():
         img = Image.open(filepath).resize((224, 224)).convert("RGB")
         img_array = np.expand_dims(np.array(img, dtype=np.float32) / 255.0, axis=0)
 
-        # TFLite prediction
         interpreter.set_tensor(input_details[0]['index'], img_array)
         interpreter.invoke()
         preds = interpreter.get_tensor(output_details[0]['index'])[0]

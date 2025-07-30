@@ -6,7 +6,7 @@ import tensorflow as tf
 import gdown
 
 # Constants
-MODEL_ID = "1juIS2yzo8eeg3d62tSlA0AYdzlkC7IFX"  # Your Drive file ID
+MODEL_ID = "1juIS2yzo8eeg3d62tSlA0AYdzlkC7IFX"
 MODEL_URL = f"https://drive.google.com/uc?id={MODEL_ID}"
 MODEL_PATH = "saved_model/model.tflite"
 UPLOAD_FOLDER = "uploads"
@@ -16,13 +16,13 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # Suppress TensorFlow logs
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
-# Download TFLite model from Google Drive if not exists
+# Download model if not present
 if not os.path.exists(MODEL_PATH):
     print("📥 Downloading model from Google Drive...")
     gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
     print("✅ Download complete.")
 
-# Load the TFLite model
+# Load TFLite model
 print("🔁 Loading TFLite model...")
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
@@ -33,7 +33,7 @@ print("✅ Model loaded.")
 # Flask app setup
 app = Flask(__name__)
 
-# Class labels and fertilizer advice
+# Labels and fertilizer suggestions
 LABELS = {
     0: "Healthy",
     1: "Nitrogen Deficiency",
@@ -58,7 +58,7 @@ ADVICE = {
         "potato": "Apply MOP @ 40 kg/acre at hilling stage"
     },
     "Healthy": {
-        "rice": "No deficiency. Maintain balanced NPK fertilization.",
+        "rice": "No deficiency detected. Maintain balanced NPK fertilization.",
         "wheat": "No deficiency detected.",
         "potato": "No deficiency detected."
     }
@@ -72,10 +72,16 @@ def home():
 def predict():
     crop = request.form.get("crop", "").lower()
     if crop not in {"rice", "wheat", "potato"}:
-        return jsonify({"error": "Invalid or missing 'crop'. Choose from rice, wheat, potato."}), 400
+        return jsonify({
+            "status": "error",
+            "message": "❌ Invalid or missing crop. Choose from: rice, wheat, potato."
+        }), 400
 
     if "file" not in request.files or request.files["file"].filename == "":
-        return jsonify({"error": "Image file is missing."}), 400
+        return jsonify({
+            "status": "error",
+            "message": "❌ No image file provided."
+        }), 400
 
     file = request.files["file"]
     filepath = os.path.join(UPLOAD_FOLDER, file.filename)
@@ -91,23 +97,30 @@ def predict():
 
         idx = int(np.argmax(preds))
         label = LABELS.get(idx, "Unknown")
-        confidence = round(float(np.max(preds)), 2)
-        advice = ADVICE.get(label, {}).get(crop, "No advice available for this crop.")
+        confidence = round(float(np.max(preds)) * 100, 2)  # Percent format
+        advice = ADVICE.get(label, {}).get(crop, "No specific advice for this crop.")
 
         return jsonify({
-            "label": label,
-            "confidence": confidence,
-            "fertilizer_advice": advice
+            "status": "success",
+            "prediction": {
+                "condition": label,
+                "confidence_percent": f"{confidence}%",
+                "crop": crop.capitalize(),
+                "fertilizer_suggestion": advice
+            }
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": f"⚠️ Server error: {str(e)}"
+        }), 500
 
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
 
-# Production server
+# Run the app using production-ready server
 if __name__ == "__main__":
     from waitress import serve
     port = int(os.environ.get("PORT", 5000))

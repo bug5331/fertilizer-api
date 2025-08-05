@@ -4,6 +4,8 @@ import numpy as np
 from PIL import Image
 import tensorflow as tf
 import gdown
+import sqlite3
+from datetime import datetime
 
 # Constants
 MODEL_ID = "1juIS2yzo8eeg3d62tSlA0AYdzlkC7IFX"
@@ -11,27 +13,22 @@ MODEL_URL = f"https://drive.google.com/uc?id={MODEL_ID}"
 MODEL_PATH = "saved_model/model.tflite"
 LABELS_PATH = "labels.txt"
 UPLOAD_FOLDER = "uploads"
+DB_PATH = "history.db"
 
-# Create directories
+# Setup
 os.makedirs("saved_model", exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Suppress TensorFlow logs
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
-
-# Download model if needed
+# Download model if missing
 if not os.path.exists(MODEL_PATH):
-    print("📥 Downloading model from Google Drive...")
+    print("📥 Downloading model...")
     gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
-    print("✅ Download complete.")
 
-# Load the TFLite model
-print("🔁 Loading TFLite model...")
+# Load TFLite model
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
-print("✅ Model loaded.")
 
 # Load labels
 def load_labels(path=LABELS_PATH):
@@ -39,7 +36,7 @@ def load_labels(path=LABELS_PATH):
         return [line.strip() for line in f.readlines()]
 LABELS = load_labels()
 
-# Fertilizer advice map
+# Fertilizer suggestions
 ADVICE = {
     "Nitrogen Deficiency": {
         "rice": "Apply Urea @ 60 kg/acre after tillering",
@@ -63,36 +60,48 @@ ADVICE = {
     }
 }
 
-# Flask app
+# Setup Flask app
 app = Flask(__name__)
+
+# Init DB
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS crop_tracker_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        crop TEXT NOT NULL,
+        condition TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        timestamp TEXT NOT NULL
+    )''')
+    conn.commit()
+    conn.close()
+
+init_db()
 
 @app.route("/")
 def home():
-    return "✅ Fertilizer Suggestion + Deficiency Detection API (TFLite) is live!"
+    return "✅ API running with prediction and history tracking"
 
 @app.route("/predict", methods=["POST"])
 def predict():
     crop = request.form.get("crop", "").lower()
     if crop not in {"rice", "wheat", "potato"}:
-        return jsonify({
-            "status": "error",
-            "message": "❌ Invalid or missing crop. Choose from: rice, wheat, potato."
-        }), 400
+        return jsonify({"status": "error", "message": "Invalid crop. Choose rice, wheat, potato."}), 400
 
     if "file" not in request.files or request.files["file"].filename == "":
-        return jsonify({
-            "status": "error",
-            "message": "❌ No image file provided."
-        }), 400
+        return jsonify({"status": "error", "message": "Image file missing."}), 400
 
     file = request.files["file"]
     filepath = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(filepath)
 
     try:
+        # Preprocess image
         img = Image.open(filepath).resize((224, 224)).convert("RGB")
         img_array = np.expand_dims(np.array(img, dtype=np.float32) / 255.0, axis=0)
 
+        # Predict
         interpreter.set_tensor(input_details[0]['index'], img_array)
         interpreter.invoke()
         preds = interpreter.get_tensor(output_details[0]['index'])[0]
@@ -100,30 +109,59 @@ def predict():
         idx = int(np.argmax(preds))
         label = LABELS[idx]
         confidence = round(float(np.max(preds)) * 100, 2)
+        suggestion = ADVICE.get(label, {}).get(crop, "No advice available.")
 
-        advice = ADVICE.get(label, {}).get(crop, "No specific advice available.")
+        # Save to DB
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO crop_tracker_history (crop, condition, confidence, timestamp) VALUES (?, ?, ?, ?)",
+                       (crop, label, confidence, timestamp))
+        conn.commit()
+        conn.close()
 
         return jsonify({
             "status": "success",
             "prediction": {
+                "crop": crop.capitalize(),
                 "condition": label,
                 "confidence_percent": f"{confidence}%",
-                "crop": crop.capitalize(),
-                "fertilizer_suggestion": advice
+                "fertilizer_suggestion": suggestion
             }
         })
 
     except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": f"⚠️ Server error: {str(e)}"
-        }), 500
+        return jsonify({"status": "error", "message": f"Server error: {str(e)}"}), 500
 
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
 
-# Run server
+@app.route("/track", methods=["GET"])
+def track_history():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, crop, condition, confidence, timestamp FROM crop_tracker_history ORDER BY id DESC")
+        rows = cursor.fetchall()
+        conn.close()
+
+        data = [
+            {
+                "id": row[0],
+                "crop": row[1],
+                "condition": row[2],
+                "confidence": f"{row[3]}%",
+                "timestamp": row[4]
+            } for row in rows
+        ]
+
+        return jsonify({"status": "success", "history": data})
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 500
+
+# Use waitress for production
 if __name__ == "__main__":
     from waitress import serve
     port = int(os.environ.get("PORT", 5000))

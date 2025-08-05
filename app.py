@@ -7,7 +7,7 @@ import io
 app = Flask(__name__)
 
 # Load model (same for both features)
-model = load_model("saved_model/final_model.h5")
+model = load_model("saved_model/model.tflite")
 
 # Labels for fertilizer prediction
 with open("labels.txt", "r") as f:

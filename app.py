@@ -34,6 +34,7 @@ output_details = interpreter.get_output_details()
 def load_labels(path=LABELS_PATH):
     with open(path, "r") as f:
         return [line.strip() for line in f.readlines()]
+
 LABELS = load_labels()
 
 # Fertilizer suggestions
@@ -79,6 +80,22 @@ def init_db():
 
 init_db()
 
+# Utility: Save to history
+def save_to_history(crop, condition, confidence=0.0):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO crop_tracker_history (crop, condition, confidence, timestamp) VALUES (?, ?, ?, ?)",
+                   (crop, condition, confidence, timestamp))
+    conn.commit()
+    conn.close()
+
+# Utility: Preprocess image
+def preprocess_image(image):
+    image = image.resize((224, 224)).convert("RGB")
+    img_array = np.expand_dims(np.array(image, dtype=np.float32) / 255.0, axis=0)
+    return img_array
+
 @app.route("/")
 def home():
     return "✅ API running with prediction and history tracking"
@@ -97,11 +114,9 @@ def predict():
     file.save(filepath)
 
     try:
-        # Preprocess image
-        img = Image.open(filepath).resize((224, 224)).convert("RGB")
-        img_array = np.expand_dims(np.array(img, dtype=np.float32) / 255.0, axis=0)
+        img = Image.open(filepath)
+        img_array = preprocess_image(img)
 
-        # Predict
         interpreter.set_tensor(input_details[0]['index'], img_array)
         interpreter.invoke()
         preds = interpreter.get_tensor(output_details[0]['index'])[0]
@@ -111,14 +126,7 @@ def predict():
         confidence = round(float(np.max(preds)) * 100, 2)
         suggestion = ADVICE.get(label, {}).get(crop, "No advice available.")
 
-        # Save to DB
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO crop_tracker_history (crop, condition, confidence, timestamp) VALUES (?, ?, ?, ?)",
-                       (crop, label, confidence, timestamp))
-        conn.commit()
-        conn.close()
+        save_to_history(crop, label, confidence)
 
         return jsonify({
             "status": "success",
@@ -136,43 +144,48 @@ def predict():
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
-            
+
 @app.route('/track', methods=['POST'])
 def track():
     try:
-        image = request.files['image']
-        if image:
-            image = Image.open(image.stream)
-            img_array = preprocess_image(image)
-
-            interpreter.set_tensor(input_details[0]['index'], img_array)
-            interpreter.invoke()
-            output_data = interpreter.get_tensor(output_details[0]['index'])
-            prediction = np.argmax(output_data, axis=1)
-
-            if prediction is not None and 0 <= prediction[0] < len(labels):
-                predicted_label = labels[prediction[0]]
-            else:
-                return jsonify({'status': 'error', 'message': 'Prediction index out of range'})
-
-            # Extract crop and condition
-            if '__' in predicted_label:
-                crop_name, condition = predicted_label.split('__')
-            else:
-                crop_name, condition = "Unknown", predicted_label
-
-            # Save to DB
-            save_to_history(crop_name, condition)
-
-            return jsonify({'status': 'success', 'prediction': predicted_label})
-        else:
+        if 'image' not in request.files or request.files['image'].filename == "":
             return jsonify({'status': 'error', 'message': 'No image found'})
+
+        image = Image.open(request.files['image'].stream)
+        img_array = preprocess_image(image)
+
+        interpreter.set_tensor(input_details[0]['index'], img_array)
+        interpreter.invoke()
+        preds = interpreter.get_tensor(output_details[0]['index'])[0]
+
+        idx = int(np.argmax(preds))
+        if idx < 0 or idx >= len(LABELS):
+            return jsonify({'status': 'error', 'message': 'Prediction index out of range'})
+
+        predicted_label = LABELS[idx]
+        confidence = round(float(np.max(preds)) * 100, 2)
+
+        # Handle crop name and condition
+        if "__" in predicted_label:
+            crop_name, condition = predicted_label.split("__")
+        else:
+            crop_name, condition = "Unknown", predicted_label
+
+        save_to_history(crop_name, condition, confidence)
+
+        return jsonify({
+            'status': 'success',
+            'prediction': {
+                'label': predicted_label,
+                'crop': crop_name,
+                'condition': condition,
+                'confidence_percent': f"{confidence}%"
+            }
+        })
     except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'})
+        return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'}), 500
 
-
-# Use waitress for production
+# Run with Waitress
 if __name__ == "__main__":
     from waitress import serve
-    port = int(os.environ.get("PORT", 5000))
-    serve(app, host="0.0.0.0", port=port)
+    serve(app, host="0.0.0.0", port=5000)

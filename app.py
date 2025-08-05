@@ -1,79 +1,4 @@
 from flask import Flask, request, jsonify
-from tensorflow.keras.models import load_model
-import numpy as np
-from PIL import Image
-import io
-
-app = Flask(__name__)
-
-# Load model (same for both features)
-model = load_model("saved_model/model.tflite")
-
-# Labels for fertilizer prediction
-with open("labels.txt", "r") as f:
-    fertilizer_labels = [line.strip() for line in f.readlines()]
-
-# Labels for crop + disease prediction
-crop_disease_labels = [
-    "Corn__Common_Rust", "Corn__Gray_Leaf_Spot", "Corn__Healthy", "Corn__Northern_Leaf_Blight",
-    "Potato__Early_Blight", "Potato__Healthy", "Potato__Late_Blight",
-    "Rice__Brown_Spot", "Rice__Healthy", "Rice__Leaf_Blast", "Rice__Neck_Blast",
-    "Sugarcane__Bacterial_Blight", "Sugarcane__Healthy", "Sugarcane__Red_Rot",
-    "Wheat__Brown_Rust", "Wheat__Healthy", "Wheat__Yellow_Rust"
-]
-
-fertilizer_suggestions = {
-    "Nitrogen Deficiency": "Apply Urea or Ammonium Sulfate.",
-    "Phosphorus Deficiency": "Use Single Super Phosphate (SSP) or DAP.",
-    "Potassium Deficiency": "Apply Muriate of Potash (MOP).",
-    "Healthy": "Your crop is healthy. No fertilizer needed."
-}
-
-def preprocess_image(image_bytes):
-    image = Image.open(io.BytesIO(image_bytes)).resize((224, 224))
-    image = np.array(image) / 255.0
-    if image.shape[-1] == 4:  # Convert RGBA to RGB if needed
-        image = image[:, :, :3]
-    return np.expand_dims(image, axis=0)
-
-@app.route("/predict-fertilizer", methods=["POST"])
-def predict_fertilizer():
-    if 'image' not in request.files:
-        return jsonify({"error": "No image uploaded"}), 400
-
-    image_bytes = request.files['image'].read()
-    processed = preprocess_image(image_bytes)
-    prediction = model.predict(processed)
-    index = np.argmax(prediction)
-    label = fertilizer_labels[index]
-    suggestion = fertilizer_suggestions.get(label, "No suggestion available.")
-
-    return jsonify({
-        "label": label,
-        "suggestion": suggestion
-    })
-
-@app.route("/predict-crop-disease", methods=["POST"])
-def predict_crop_disease():
-    if 'image' not in request.files:
-        return jsonify({"error": "No image uploaded"}), 400
-
-    image_bytes = request.files['image'].read()
-    processed = preprocess_image(image_bytes)
-    prediction = model.predict(processed)
-    index = np.argmax(prediction)
-    label = crop_disease_labels[index]
-
-    crop, disease = label.split("__")
-
-    return jsonify({
-        "crop": crop,
-        "disease": disease
-    })
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
-from flask import Flask, request, jsonify
 import os
 import numpy as np
 from PIL import Image
@@ -87,19 +12,20 @@ MODEL_PATH = "saved_model/model.tflite"
 LABELS_PATH = "labels.txt"
 UPLOAD_FOLDER = "uploads"
 
+# Create directories
 os.makedirs("saved_model", exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Suppress TensorFlow logs
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
-# Download model if not present
+# Download model if needed
 if not os.path.exists(MODEL_PATH):
     print("📥 Downloading model from Google Drive...")
     gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
     print("✅ Download complete.")
 
-# Load TFLite model
+# Load the TFLite model
 print("🔁 Loading TFLite model...")
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
@@ -107,14 +33,13 @@ input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 print("✅ Model loaded.")
 
-# Load labels from labels.txt in root
+# Load labels
 def load_labels(path=LABELS_PATH):
     with open(path, "r") as f:
         return [line.strip() for line in f.readlines()]
-
 LABELS = load_labels()
 
-# Advice mapping
+# Fertilizer advice map
 ADVICE = {
     "Nitrogen Deficiency": {
         "rice": "Apply Urea @ 60 kg/acre after tillering",
@@ -138,7 +63,7 @@ ADVICE = {
     }
 }
 
-# Flask app setup
+# Flask app
 app = Flask(__name__)
 
 @app.route("/")
@@ -176,7 +101,6 @@ def predict():
         label = LABELS[idx]
         confidence = round(float(np.max(preds)) * 100, 2)
 
-        # Fertilizer suggestion
         advice = ADVICE.get(label, {}).get(crop, "No specific advice available.")
 
         return jsonify({
@@ -199,7 +123,7 @@ def predict():
         if os.path.exists(filepath):
             os.remove(filepath)
 
-# For local or render deployment
+# Run server
 if __name__ == "__main__":
     from waitress import serve
     port = int(os.environ.get("PORT", 5000))

@@ -136,30 +136,40 @@ def predict():
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
-
-@app.route("/track", methods=["GET"])
-def track_history():
+            
+@app.route('/track', methods=['POST'])
+def track():
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, crop, condition, confidence, timestamp FROM crop_tracker_history ORDER BY id DESC")
-        rows = cursor.fetchall()
-        conn.close()
+        image = request.files['image']
+        if image:
+            image = Image.open(image.stream)
+            img_array = preprocess_image(image)
 
-        data = [
-            {
-                "id": row[0],
-                "crop": row[1],
-                "condition": row[2],
-                "confidence": f"{row[3]}%",
-                "timestamp": row[4]
-            } for row in rows
-        ]
+            interpreter.set_tensor(input_details[0]['index'], img_array)
+            interpreter.invoke()
+            output_data = interpreter.get_tensor(output_details[0]['index'])
+            prediction = np.argmax(output_data, axis=1)
 
-        return jsonify({"status": "success", "history": data})
+            if prediction is not None and 0 <= prediction[0] < len(labels):
+                predicted_label = labels[prediction[0]]
+            else:
+                return jsonify({'status': 'error', 'message': 'Prediction index out of range'})
 
+            # Extract crop and condition
+            if '__' in predicted_label:
+                crop_name, condition = predicted_label.split('__')
+            else:
+                crop_name, condition = "Unknown", predicted_label
+
+            # Save to DB
+            save_to_history(crop_name, condition)
+
+            return jsonify({'status': 'success', 'prediction': predicted_label})
+        else:
+            return jsonify({'status': 'error', 'message': 'No image found'})
     except Exception as e:
-        return jsonify({"status": "error", "message": f"Database error: {str(e)}"}), 500
+        return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'})
+
 
 # Use waitress for production
 if __name__ == "__main__":

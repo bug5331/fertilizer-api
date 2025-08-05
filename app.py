@@ -37,28 +37,25 @@ def load_labels(path=LABELS_PATH):
 
 LABELS = load_labels()
 
-# Fertilizer suggestions
-ADVICE = {
-    "Nitrogen Deficiency": {
-        "rice": "Apply Urea @ 60 kg/acre after tillering",
-        "wheat": "Apply Urea @ 80 kg/acre at early vegetative stage",
-        "potato": "Top-dress Urea @ 60 kg/acre 3–4 weeks after planting"
-    },
-    "Phosphorus Deficiency": {
-        "rice": "Apply Single Super Phosphate @ 40 kg/acre at planting",
-        "wheat": "Apply DAP @ 50 kg/acre at sowing",
-        "potato": "Apply SSP @ 50 kg/acre before planting"
-    },
-    "Potassium Deficiency": {
-        "rice": "Apply MOP @ 30 kg/acre at panicle initiation",
-        "wheat": "Apply SOP @ 40 kg/acre at tillering stage",
-        "potato": "Apply MOP @ 40 kg/acre at hilling stage"
-    },
-    "Healthy": {
-        "rice": "No deficiency detected. Maintain balanced NPK fertilization.",
-        "wheat": "No deficiency detected.",
-        "potato": "No deficiency detected."
-    }
+# Fertilizer suggestions based on label + crop
+SUGGESTIONS = {
+    "Corn__Common_Rust": "Use a fungicide like Propiconazole. Rotate crops and remove infected debris.",
+    "Corn__Gray_Leaf_Spot": "Apply fungicides such as strobilurins. Improve air circulation.",
+    "Corn__Northern_Leaf_Blight": "Use nitrogen-rich fertilizer. Opt for resistant varieties.",
+    "Potato__Early_Blight": "Apply copper-based fungicides. Use potassium nitrate and ensure proper irrigation.",
+    "Potato__Late_Blight": "Use mancozeb-based fungicides. Avoid overhead irrigation.",
+    "Rice__Brown_Spot": "Apply balanced NPK fertilizers. Improve drainage and use seed treatment.",
+    "Rice__Leaf_Blast": "Apply potassium fertilizer. Avoid excess nitrogen.",
+    "Rice__Neck_Blast": "Use tricyclazole fungicide. Maintain nitrogen levels properly.",
+    "Sugarcane_Bacterial_Blight": "Apply copper oxychloride. Use disease-free setts and avoid injuries.",
+    "Sugarcane_Red_Rot": "Apply phosphorus and potash. Use resistant varieties and rotate crops.",
+    "Wheat__Brown_Rust": "Spray sulfur-based fungicides. Avoid dense planting.",
+    "Wheat__Yellow_Rust": "Use Propiconazole. Apply nitrogen-based fertilizer.",
+    "Corn__Healthy": "No fertilizer needed. Crop is healthy.",
+    "Potato__Healthy": "No deficiency detected. Maintain balanced fertilization.",
+    "Rice__Healthy": "No deficiency detected. Maintain balanced NPK fertilization.",
+    "Sugarcane_Healthy": "No action required. Field is healthy.",
+    "Wheat__Healthy": "No action needed. Crop is healthy."
 }
 
 # Setup Flask app
@@ -124,7 +121,8 @@ def predict():
         idx = int(np.argmax(preds))
         label = LABELS[idx]
         confidence = round(float(np.max(preds)) * 100, 2)
-        suggestion = ADVICE.get(label, {}).get(crop, "No advice available.")
+
+        suggestion = SUGGESTIONS.get(label, "No advice available.")
 
         save_to_history(crop, label, confidence)
 

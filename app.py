@@ -100,7 +100,7 @@ def home():
 @app.route("/predict", methods=["POST"])
 def predict():
     crop = request.form.get("crop", "").lower()
-    if crop not in {"rice", "wheat", "potato"}:
+    if crop not in {"rice", "wheat", "potato","corn", "sugarcane"}:
         return jsonify({"status": "error", "message": "Invalid crop. Choose rice, wheat, potato."}), 400
 
     if "file" not in request.files or request.files["file"].filename == "":

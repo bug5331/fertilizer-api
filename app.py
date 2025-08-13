@@ -6,13 +6,8 @@ import tensorflow as tf
 import gdown
 import sqlite3
 from datetime import datetime
-<<<<<<< HEAD
-from firebase_admin import credentials, initialize_app, db
-
-=======
 import firebase_admin
 from firebase_admin import credentials, db
->>>>>>> 2c8c08f3f9ff2ee38a121a8f95f3becd4be2f8ee
 
 # -----------------------
 # Constants & Setup

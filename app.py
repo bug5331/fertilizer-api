@@ -6,8 +6,8 @@ import tensorflow as tf
 import gdown
 import sqlite3
 from datetime import datetime
-import firebase_admin
-from firebase_admin import credentials, db
+from firebase_admin import credentials, initialize_app, db
+
 
 # -----------------------
 # Constants & Setup
@@ -64,9 +64,11 @@ SUGGESTIONS = {
 # -----------------------
 # Firebase Realtime DB
 # -----------------------
-cred = credentials.Certificate("serviceAccountKey.json")  # your Firebase admin key
-firebase_admin.initialize_app(cred, {
-    'databaseURL': 'https://farmico-5c432-default-rtdb.firebaseio.com/'  # your DB URL
+cred_dict = json.loads(os.environ.get("FIREBASE_KEY_JSON"))
+cred = credentials.Certificate(cred_dict)
+
+initialize_app(cred, {
+    'databaseURL': 'https://farmico-5c432-default-rtdb.firebaseio.com/'
 })
 
 # -----------------------

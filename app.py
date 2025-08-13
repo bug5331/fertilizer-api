@@ -7,7 +7,7 @@ import gdown
 import sqlite3
 from datetime import datetime
 import firebase_admin
-from firebase_admin import credentials, db
+from firebase_admin import credentials, initialize_app, db
 import json
 # -----------------------
 # Constants & Setup

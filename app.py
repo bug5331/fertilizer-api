@@ -6,8 +6,12 @@ import tensorflow as tf
 import gdown
 import sqlite3
 from datetime import datetime
+import firebase_admin
+from firebase_admin import credentials, db
 
-# Constants
+# -----------------------
+# Constants & Setup
+# -----------------------
 MODEL_ID = "1juIS2yzo8eeg3d62tSlA0AYdzlkC7IFX"
 MODEL_URL = f"https://drive.google.com/uc?id={MODEL_ID}"
 MODEL_PATH = "saved_model/model.tflite"
@@ -15,7 +19,6 @@ LABELS_PATH = "labels.txt"
 UPLOAD_FOLDER = "uploads"
 DB_PATH = "history.db"
 
-# Setup
 os.makedirs("saved_model", exist_ok=True)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
@@ -37,7 +40,7 @@ def load_labels(path=LABELS_PATH):
 
 LABELS = load_labels()
 
-# Fertilizer suggestions based on label + crop
+# Fertilizer suggestions
 SUGGESTIONS = {
     "Corn__Common_Rust": "Use a fungicide like Propiconazole. Rotate crops and remove infected debris.",
     "Corn__Gray_Leaf_Spot": "Apply fungicides such as strobilurins. Improve air circulation.",
@@ -58,10 +61,20 @@ SUGGESTIONS = {
     "Wheat__Healthy": "No action needed. Crop is healthy."
 }
 
-# Setup Flask app
+# -----------------------
+# Firebase Realtime DB
+# -----------------------
+cred = credentials.Certificate("serviceAccountKey.json")  # your Firebase admin key
+firebase_admin.initialize_app(cred, {
+    'databaseURL': 'https://farmico-5c432-default-rtdb.firebaseio.com/'  # your DB URL
+})
+
+# -----------------------
+# Flask App
+# -----------------------
 app = Flask(__name__)
 
-# Init DB
+# Init SQLite DB for history
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -77,7 +90,9 @@ def init_db():
 
 init_db()
 
-# Utility: Save to history
+# -----------------------
+# Utilities
+# -----------------------
 def save_to_history(crop, condition, confidence=0.0):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn = sqlite3.connect(DB_PATH)
@@ -87,21 +102,26 @@ def save_to_history(crop, condition, confidence=0.0):
     conn.commit()
     conn.close()
 
-# Utility: Preprocess image
 def preprocess_image(image):
     image = image.resize((224, 224)).convert("RGB")
     img_array = np.expand_dims(np.array(image, dtype=np.float32) / 255.0, axis=0)
     return img_array
 
+# -----------------------
+# Routes
+# -----------------------
 @app.route("/")
 def home():
-    return "✅ API running with prediction and history tracking"
+    return "✅ API running with prediction, history tracking, and CropTracker"
 
+# -----------------------
+# Prediction Endpoint
+# -----------------------
 @app.route("/predict", methods=["POST"])
 def predict():
     crop = request.form.get("crop", "").lower()
-    if crop not in {"rice", "wheat", "potato","corn", "sugarcane"}:
-        return jsonify({"status": "error", "message": "Invalid crop. Choose rice, wheat, potato."}), 400
+    if crop not in {"rice", "wheat", "potato", "corn", "sugarcane"}:
+        return jsonify({"status": "error", "message": "Invalid crop. Choose rice, wheat, potato, corn, sugarcane."}), 400
 
     if "file" not in request.files or request.files["file"].filename == "":
         return jsonify({"status": "error", "message": "Image file missing."}), 400
@@ -121,9 +141,7 @@ def predict():
         idx = int(np.argmax(preds))
         label = LABELS[idx]
         confidence = round(float(np.max(preds)) * 100, 2)
-
         suggestion = SUGGESTIONS.get(label, "No advice available.")
-
         save_to_history(crop, label, confidence)
 
         return jsonify({
@@ -135,14 +153,15 @@ def predict():
                 "fertilizer_suggestion": suggestion
             }
         })
-
     except Exception as e:
         return jsonify({"status": "error", "message": f"Server error: {str(e)}"}), 500
-
     finally:
         if os.path.exists(filepath):
             os.remove(filepath)
 
+# -----------------------
+# Track Endpoint
+# -----------------------
 @app.route('/track', methods=['POST'])
 def track():
     try:
@@ -163,7 +182,6 @@ def track():
         predicted_label = LABELS[idx]
         confidence = round(float(np.max(preds)) * 100, 2)
 
-        # Handle crop name and condition
         if "__" in predicted_label:
             crop_name, condition = predicted_label.split("__")
         else:
@@ -183,7 +201,35 @@ def track():
     except Exception as e:
         return jsonify({'status': 'error', 'message': f'Server error: {str(e)}'}), 500
 
+# -----------------------
+# CropTracker Endpoints
+# -----------------------
+@app.route("/crops", methods=["GET"])
+def get_all_crops():
+    try:
+        crops_ref = db.reference("Crops")
+        crops_data = crops_ref.get()
+        if not crops_data:
+            return jsonify({'status': 'error', 'message': 'No crops found'}), 404
+        crop_names = list(crops_data.keys())
+        return jsonify({'status': 'success', 'crops': crop_names})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route("/crops/<crop_name>", methods=["GET"])
+def get_crop_details(crop_name):
+    try:
+        crops_ref = db.reference(f"Crops/{crop_name}")
+        crop_data = crops_ref.get()
+        if not crop_data:
+            return jsonify({'status': 'error', 'message': f'Crop {crop_name} not found'}), 404
+        return jsonify({'status': 'success', 'crop': crop_name, 'details': crop_data})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# -----------------------
 # Run with Waitress
+# -----------------------
 if __name__ == "__main__":
     from waitress import serve
     serve(app, host="0.0.0.0", port=5000)

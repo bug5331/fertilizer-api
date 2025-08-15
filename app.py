@@ -7,7 +7,7 @@ import gdown
 import sqlite3
 from datetime import datetime
 import firebase_admin
-from firebase_admin import credentials, initialize_app, db
+from firebase_admin import credentials, initialize_app,db
 import json
 # -----------------------
 # Constants & Setup
@@ -228,6 +228,30 @@ def get_crop_details(crop_name):
         return jsonify({'status': 'success', 'crop': crop_name, 'details': crop_data})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+import sqlite3
+def get_history():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT crop, condition, confidence, timestamp FROM crop_tracker_history ORDER BY timestamp DESC"
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        history = [
+            {
+                "crop": row[0],
+                "condition": row[1],
+                "confidence": row[2],
+                "timestamp": row[3]
+            }
+            for row in rows
+        ]
+        return jsonify({"status": "success", "data": history})
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # -----------------------
 # Run with Waitress

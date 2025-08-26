@@ -156,12 +156,17 @@ def predict():
 
         # Get prediction restricted to this crop
         filtered_preds = preds[crop_indices]
+
+    # Normalize filtered predictions so they sum to 1
+        filtered_preds = filtered_preds / np.sum(filtered_preds)
+
         best_idx_in_filtered = int(np.argmax(filtered_preds))
         idx = crop_indices[best_idx_in_filtered]
 
         label = LABELS[idx]
         confidence = round(float(np.max(filtered_preds)) * 100, 2)
         suggestion = SUGGESTIONS.get(label, "No advice available.")
+
 
         # Save to history
         save_to_history(crop, label, confidence)

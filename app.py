@@ -9,6 +9,7 @@ from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, initialize_app,db
 import json
+
 # -----------------------
 # Constants & Setup
 # -----------------------
@@ -40,24 +41,28 @@ def load_labels(path=LABELS_PATH):
 
 LABELS = load_labels()
 
-# Fertilizer suggestions
+# Fertilizer suggestions (updated to match labels.txt)
 SUGGESTIONS = {
     "Corn__Common_Rust": "Use a fungicide like Propiconazole. Rotate crops and remove infected debris.",
     "Corn__Gray_Leaf_Spot": "Apply fungicides such as strobilurins. Improve air circulation.",
     "Corn__Northern_Leaf_Blight": "Use nitrogen-rich fertilizer. Opt for resistant varieties.",
+    "Corn__Healthy": "No fertilizer needed. Crop is healthy.",
+    
     "Potato__Early_Blight": "Apply copper-based fungicides. Use potassium nitrate and ensure proper irrigation.",
     "Potato__Late_Blight": "Use mancozeb-based fungicides. Avoid overhead irrigation.",
+    "Potato__Healthy": "No deficiency detected. Maintain balanced fertilization.",
+    
     "Rice__Brown_Spot": "Apply balanced NPK fertilizers. Improve drainage and use seed treatment.",
     "Rice__Leaf_Blast": "Apply potassium fertilizer. Avoid excess nitrogen.",
     "Rice__Neck_Blast": "Use tricyclazole fungicide. Maintain nitrogen levels properly.",
-    "Sugarcane_Bacterial_Blight": "Apply copper oxychloride. Use disease-free setts and avoid injuries.",
-    "Sugarcane_Red_Rot": "Apply phosphorus and potash. Use resistant varieties and rotate crops.",
+    "Rice__Healthy": "No deficiency detected. Maintain balanced NPK fertilization.",
+    
+    "Sugarcane__Bacterial_Blight": "Apply copper oxychloride. Use disease-free setts and avoid injuries.",
+    "Sugarcane__Red_Rot": "Apply phosphorus and potash. Use resistant varieties and rotate crops.",
+    "Sugarcane__Healthy": "No action required. Field is healthy.",
+    
     "Wheat__Brown_Rust": "Spray sulfur-based fungicides. Avoid dense planting.",
     "Wheat__Yellow_Rust": "Use Propiconazole. Apply nitrogen-based fertilizer.",
-    "Corn__Healthy": "No fertilizer needed. Crop is healthy.",
-    "Potato__Healthy": "No deficiency detected. Maintain balanced fertilization.",
-    "Rice__Healthy": "No deficiency detected. Maintain balanced NPK fertilization.",
-    "Sugarcane_Healthy": "No action required. Field is healthy.",
     "Wheat__Healthy": "No action needed. Crop is healthy."
 }
 
@@ -121,9 +126,9 @@ def home():
 # -----------------------
 @app.route("/predict", methods=["POST"])
 def predict():
-    crop = request.form.get("crop", "").lower()
-    if crop not in {"rice", "wheat", "potato", "corn", "sugarcane"}:
-        return jsonify({"status": "error", "message": "Invalid crop. Choose rice, wheat, potato, corn, sugarcane."}), 400
+    crop = request.form.get("crop", "").capitalize()
+    if crop not in {"Rice", "Wheat", "Potato", "Corn", "Sugarcane"}:
+        return jsonify({"status": "error", "message": "Invalid crop. Choose Rice, Wheat, Potato, Corn, or Sugarcane."}), 400
 
     if "file" not in request.files or request.files["file"].filename == "":
         return jsonify({"status": "error", "message": "Image file missing."}), 400
@@ -140,16 +145,31 @@ def predict():
         interpreter.invoke()
         preds = interpreter.get_tensor(output_details[0]['index'])[0]
 
-        idx = int(np.argmax(preds))
+        # ----------------------------
+        # 🔹 Filter predictions by crop
+        # ----------------------------
+        crop_labels = [label for label in LABELS if label.startswith(f"{crop}__")]
+        crop_indices = [i for i, label in enumerate(LABELS) if label.startswith(f"{crop}__")]
+
+        if not crop_labels:
+            return jsonify({"status": "error", "message": f"No labels found for crop {crop}"}), 400
+
+        # Get prediction restricted to this crop
+        filtered_preds = preds[crop_indices]
+        best_idx_in_filtered = int(np.argmax(filtered_preds))
+        idx = crop_indices[best_idx_in_filtered]
+
         label = LABELS[idx]
-        confidence = round(float(np.max(preds)) * 100, 2)
+        confidence = round(float(np.max(filtered_preds)) * 100, 2)
         suggestion = SUGGESTIONS.get(label, "No advice available.")
+
+        # Save to history
         save_to_history(crop, label, confidence)
 
         return jsonify({
             "status": "success",
             "prediction": {
-                "crop": crop.capitalize(),
+                "crop": crop,
                 "condition": label,
                 "confidence_percent": f"{confidence}%",
                 "fertilizer_suggestion": suggestion
@@ -228,7 +248,7 @@ def get_crop_details(crop_name):
         return jsonify({'status': 'success', 'crop': crop_name, 'details': crop_data})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
-import sqlite3
+
 def get_history():
     try:
         conn = sqlite3.connect(DB_PATH)

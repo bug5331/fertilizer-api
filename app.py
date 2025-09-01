@@ -57,7 +57,7 @@ SUGGESTIONS = {
     "Rice__Neck_Blast": "Use tricyclazole fungicide. Maintain nitrogen levels properly.",
     "Rice__Healthy": "No deficiency detected. Maintain balanced NPK fertilization.",
     
-    "Sugarcane__Bacterial_Blight": "Apply copper oxychloride. Use disease-free setts and avoid injuries.",
+    "Sugarcane__Bacterial_Blight": "Apply copper oxychloride. Use free disease setts and avoid injuries.",
     "Sugarcane__Red_Rot": "Apply phosphorus and potash. Use resistant varieties and rotate crops.",
     "Sugarcane__Healthy": "No action required. Field is healthy.",
     
